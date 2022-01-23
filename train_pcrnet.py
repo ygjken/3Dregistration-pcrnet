@@ -19,7 +19,7 @@ if BASE_DIR[-8:] == 'examples':
 
 from models import PointNet
 from models import iPCRNet
-from losses.chamfer_distance import ChamferDistanceLoss
+from losses import ChamferDistanceLoss, EarthMoverDistanceFunction, earth_mover_distance
 from data import RegistrationData, ModelNet40Data
 
 
@@ -60,7 +60,7 @@ def test_one_epoch(device, model, test_loader):
         igt = igt.to(device)
 
         output = model(template, source)
-        loss_val = ChamferDistanceLoss()(template, output['transformed_source'])
+        loss_val = earth_mover_distance(template, output['transformed_source'])
 
         test_loss += loss_val.item()
         count += 1
@@ -87,7 +87,7 @@ def train_one_epoch(device, model, train_loader, optimizer):
         igt = igt.to(device)
 
         output = model(template, source)
-        loss_val = ChamferDistanceLoss()(template, output['transformed_source'])
+        loss_val = earth_mover_distance(template, output['transformed_source'])
         # print(loss_val.item())
 
         # forward + backward + optimize
