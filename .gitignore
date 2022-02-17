@@ -1,0 +1,9 @@
+checkpoints
+data/modelnet*
+data/dude
+__pycache__
+utils
+losses/cuda/emd_torch
+EMDLoss_PyTorch_cpp_extension
+PyTorch_EMD.egg-info
+logs

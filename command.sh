@@ -5,7 +5,7 @@ if [ "$1" -eq "0" ]; then
         --epochs 500
 elif [ "$1" -eq "1" ]; then
     python run_pcrnet.py \
-        --exp_name iPCRNet_modelnet_emdloss \
-        --pretrained_ptnet checkpoints/iPCRNet_modelnet/models/best_ptnet_model.t7 \
-        --pretrained_model checkpoints/iPCRNet_modelnet/models/best_model.t7
+        --exp_name iPCRNet_modelnet \
+        --pretrained_ptnet checkpoints/iPCRNet_modelnet_emdloss/models/best_ptnet_model.t7 \
+        --pretrained_model checkpoints/iPCRNet_modelnet_emdloss/models/best_model.t7
 fi
