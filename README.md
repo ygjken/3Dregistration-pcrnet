@@ -1,10 +1,15 @@
 # 3Dregistration-pcrnet
 
 ## Setup
+Use this command to install the required packages. 
+```
+pip install -r requirements.txt
+```
+
 If you want to use EMDLoss, you need to install the following modules.
 ```
 git clone https://github.com/yym064/EMDLoss_PyTorch_cpp_extension.git
-cd github.com/yym064/EMDLoss_PyTorch_cpp_extension
+cd EMDLoss_PyTorch_cpp_extension
 python setup.py install
 ```
 
