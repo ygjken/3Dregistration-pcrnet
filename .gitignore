@@ -1,4 +1,9 @@
-EMDLoss_PyTorch_cpp_extension
-data/modelnet40_ply_hdf5_2048
-*/__pycache__
 checkpoints
+data/modelnet*
+data/dude
+__pycache__
+utils
+losses/cuda/emd_torch
+EMDLoss_PyTorch_cpp_extension
+PyTorch_EMD.egg-info
+logs
