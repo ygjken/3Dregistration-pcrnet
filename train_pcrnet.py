@@ -1,12 +1,9 @@
 import argparse
 import os
 import sys
-import logging
-import numpy
 import numpy as np
 import torch
 import torch.utils.data
-import torchvision
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -20,7 +17,7 @@ if BASE_DIR[-8:] == 'examples':
 from models import PointNet
 from models import iPCRNet
 from losses import ChamferDistanceLoss, EarthMoverDistanceFunction, earth_mover_distance
-from data import RegistrationData, ModelNet40Data
+from data import RegistrationData, ModelNet40Data, DudEData
 
 
 def _init_(args):
@@ -149,7 +146,7 @@ def options():
     parser.add_argument('--eval', type=bool, default=False, help='Train or Evaluate the network.')
 
     # settings for input data
-    parser.add_argument('--dataset_type', default='modelnet', choices=['modelnet', 'shapenet2'],
+    parser.add_argument('--dataset_type', default='modelnet', choices=['modelnet', 'shapenet2', 'dude'],
                         metavar='DATASET', help='dataset type (default: modelnet)')
     parser.add_argument('--num_points', default=1024, type=int,
                         metavar='N', help='points in point-cloud (default: 1024)')
@@ -199,8 +196,12 @@ def main():
     textio = IOStream('checkpoints/' + args.exp_name + '/run.log')
     textio.cprint(str(args))
 
-    trainset = RegistrationData('PCRNet', ModelNet40Data(train=True))
-    testset = RegistrationData('PCRNet', ModelNet40Data(train=False))
+    if args.dataset_type == 'modelnet':
+        trainset = RegistrationData('PCRNet', ModelNet40Data(train=True))
+        testset = RegistrationData('PCRNet', ModelNet40Data(train=False))
+    elif args.dataset_type == 'dude':
+        trainset = RegistrationData('PCRNet', DudEData(train=True))
+        testset = RegistrationData('PCRNet', DudEData(train=False))
     train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=args.workers)
     test_loader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=args.workers)
 

@@ -1,13 +1,9 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 import numpy as np
+import open3d as o3d
 import os
 import h5py
-import subprocess
-import shlex
 import json
 import glob
 from ops import transform_functions, se3
@@ -16,7 +12,6 @@ from scipy.spatial.distance import minkowski
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 from scipy.spatial import cKDTree
-from torch.utils.data import Dataset
 
 
 def download_modelnet40():
@@ -198,6 +193,70 @@ class ModelNet40Data(Dataset):
         return shape_names
 
 
+class DudEData(Dataset):
+    def __init__(
+        self,
+        train=True,
+        num_points=1024,
+        sampler='random',
+        data_path='data/dude'
+    ):
+        super().__init__()
+        self.path_prefix = data_path
+        self.train = train
+
+        json_path = os.path.join(self.path_prefix, 'list.json')
+        json_file = open(json_path, 'r')
+        self.namelist = json.load(json_file)
+
+        self.pcs = []
+
+        # read from .json and .ply
+        for i, (keys) in enumerate(self.namelist):
+            pc_dict = {}
+            for key in keys:
+                pc_dict[key] = o3d.io.read_point_cloud(os.path.join(self.path_prefix, "ply", self.namelist[i][key]) + '.ply')
+                pc_dict[key] = self._random_sample(pc_dict[key], num_points)
+
+            self.pcs += [pc_dict]
+
+        # separate for train mode or test mode
+        sep = int(len(self.pcs) * 0.7)
+        if self.train:
+            self.pcs = self.pcs[:sep]
+        else:
+            self.pcs = self.pcs[sep:]
+
+        # numpy to tensor
+        for i, _ in enumerate(self.pcs):
+            self.pcs[i] = self._numpy_to_tensor(self.pcs[i])
+
+    def _random_sample(self, pc: o3d.geometry.PointCloud, n: int):
+        """run random sampling to a specified size
+
+        Args:
+            pc (o3d.geometry.PointCloud): Point cloud before sampling
+            n (int): number of point after sampling
+
+        Returns:
+            np.array : sampled point cloud in numpy
+        """
+        pc_len = len(np.asarray(pc.points))
+        pc = pc.random_down_sample((n + 0.1) / pc_len)
+        return np.asarray(pc.points)
+
+    def _numpy_to_tensor(self, pc_pair: dict):
+        for key in pc_pair:
+            pc_pair[key] = torch.from_numpy(pc_pair[key].astype(np.float32)).clone()  # numpy to tensor
+        return pc_pair
+
+    def __len__(self):
+        return len(self.pcs)
+
+    def __getitem__(self, idx):
+        return self.pcs[idx]['source'], self.pcs[idx]['target']
+
+
 class ClassificationData(Dataset):
     def __init__(self, data_class=ModelNet40Data()):
         super(ClassificationData, self).__init__()
@@ -264,9 +323,14 @@ class RegistrationData(Dataset):
         self.data_class = data_class
 
     def __getitem__(self, index):
-        template, label = self.data_class[index]
-        self.transforms.index = index				# for fixed transformations in PCRNet.
-        source = self.transforms(template)
+        if type(self.data_class).__name__ == 'ModelNet40Data':
+            template, label = self.data_class[index]
+            self.transforms.index = index				# for fixed transformations in PCRNet.
+            source = self.transforms(template)
+        elif type(self.data_class).__name__ == 'DudEData':
+            source, template = self.data_class[index]
+            self.transforms.index = index
+            source = self.transforms(source)
 
         # Check for Partial Data.
         if self.partial_source:

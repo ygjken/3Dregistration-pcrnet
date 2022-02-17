@@ -5,7 +5,6 @@ if module_path not in sys.path:
     sys.path.append(str(module_path))
 print(module_path)
 
-from sqlite3 import register_adapter
 import os
 import open3d as o3d
 
