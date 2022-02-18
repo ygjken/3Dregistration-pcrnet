@@ -1,0 +1,6 @@
+hydra:
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d_%H-%M-%S}
+
+defaults:
+  - exp: train_ipcrnet

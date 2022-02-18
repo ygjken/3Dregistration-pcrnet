@@ -201,7 +201,7 @@ class DudEData(Dataset):
         train=True,
         num_points=1024,
         sampler='random',
-        data_path='data/dude'
+        data_path=to_absolute_path('data/dude'),
     ):
         super().__init__()
         self.path_prefix = data_path

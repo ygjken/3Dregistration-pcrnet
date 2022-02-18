@@ -1,7 +1,4 @@
 # @package _global_
-hydra:
-  run:
-    dir: outputs/opt:${exp_name}/${now:%Y-%m-%d_%H-%M-%S}
 
 exp_name: iPCRNet_modelnet_
 dataset_path: data/modelnet40_ply_hdf5_2048

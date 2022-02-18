@@ -70,10 +70,9 @@ def test_one_epoch(device, model, test_loader):
     return test_loss
 
 
-# ! BUG: cannot unpack non-iterable float object
 def test(args, model, test_loader, textio, device):
-    test_loss, test_accuracy = test_one_epoch(device, model, test_loader)
-    textio.cprint('Validation Loss: %f & Validation Accuracy: %f' % (test_loss, test_accuracy))
+    test_loss = test_one_epoch(device, model, test_loader)
+    textio.cprint('Validation Loss: %f & Validation Accuracy: %s' % (test_loss, '-'))
 
 
 def train_one_epoch(device, model, train_loader, optimizer):
@@ -187,7 +186,7 @@ def options():
     return args
 
 
-@hydra.main(config_path='config', config_name='train_ipcrnet')
+@hydra.main(config_path='config', config_name='default')
 def main(args: DictConfig):
 
     torch.backends.cudnn.deterministic = True

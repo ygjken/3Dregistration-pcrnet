@@ -1,0 +1,25 @@
+# @package _global_
+
+exp_name: iPCRNet_by_modelnet_testing_dude
+dataset_path: data/dude
+eval: true
+
+data: 
+  dataset_type: dude
+  num_points: 1024
+
+pointnet:
+  pointnet: tune
+  emb_dims: 1024
+  symfn: max
+  
+training:
+  seed: 1234
+  workers: 4
+  batch_size: 32
+  epochs: 500
+  start_epoch: 0
+  optimizer: Adam
+  resume: null
+  pretrained: null
+  cuda: 0
