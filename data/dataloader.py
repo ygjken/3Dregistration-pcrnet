@@ -13,6 +13,8 @@ from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 from scipy.spatial import cKDTree
 
+from hydra.utils import to_absolute_path
+
 
 def download_modelnet40():
     BASE_DIR = os.getcwd()
@@ -27,13 +29,12 @@ def download_modelnet40():
         os.system('rm %s' % (zipfile))
 
 
-def load_data(train, use_normals):
+def load_data(train, use_normals, dir_path):
     if train:
         partition = 'train'
     else:
         partition = 'test'
-    BASE_DIR = os.getcwd()
-    DATA_DIR = os.path.join(BASE_DIR, 'data')
+    DATA_DIR = dir_path
     all_data = []
     all_label = []
     for h5_name in glob.glob(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048', 'ply_data_%s*.h5' % partition)):
@@ -147,16 +148,17 @@ class UnknownDataTypeError(Exception):
 class ModelNet40Data(Dataset):
     def __init__(
             self,
+            dir_path=to_absolute_path('data'),
             train=True,
             num_points=1024,
             download=True,
             randomize_data=False,
-            use_normals=False
+            use_normals=False,
     ):
         super(ModelNet40Data, self).__init__()
         if download:
             download_modelnet40()
-        self.data, self.labels = load_data(train, use_normals)
+        self.data, self.labels = load_data(train, use_normals, dir_path)
         if not train:
             self.shapes = self.read_classes_ModelNet40()
         self.num_points = num_points

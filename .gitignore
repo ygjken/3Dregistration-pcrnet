@@ -7,3 +7,4 @@ losses/cuda/emd_torch
 EMDLoss_PyTorch_cpp_extension
 PyTorch_EMD.egg-info
 logs
+outputs
