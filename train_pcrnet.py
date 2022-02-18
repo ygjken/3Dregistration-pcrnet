@@ -8,6 +8,10 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+import hydra
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import get_original_cwd, to_absolute_path
+
 # Only if the files are in example folder.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR[-8:] == 'examples':
@@ -66,8 +70,9 @@ def test_one_epoch(device, model, test_loader):
     return test_loss
 
 
-def test(args, model, test_loader, textio):
-    test_loss, test_accuracy = test_one_epoch(args.device, model, test_loader)
+# ! BUG: cannot unpack non-iterable float object
+def test(args, model, test_loader, textio, device):
+    test_loss, test_accuracy = test_one_epoch(device, model, test_loader)
     textio.cprint('Validation Loss: %f & Validation Accuracy: %f' % (test_loss, test_accuracy))
 
 
@@ -99,9 +104,9 @@ def train_one_epoch(device, model, train_loader, optimizer):
     return train_loss
 
 
-def train(args, model, train_loader, test_loader, boardio, textio, checkpoint):
+def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device):
     learnable_params = filter(lambda p: p.requires_grad, model.parameters())
-    if args.optimizer == 'Adam':
+    if args.training.optimizer == 'Adam':
         optimizer = torch.optim.Adam(learnable_params)
     else:
         optimizer = torch.optim.SGD(learnable_params, lr=0.1)
@@ -112,9 +117,9 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint):
 
     best_test_loss = np.inf
 
-    for epoch in range(args.start_epoch, args.epochs):
-        train_loss = train_one_epoch(args.device, model, train_loader, optimizer)
-        test_loss = test_one_epoch(args.device, model, test_loader)
+    for epoch in range(args.training.start_epoch, args.training.epochs):
+        train_loss = train_one_epoch(device, model, train_loader, optimizer)
+        test_loss = test_one_epoch(device, model, test_loader)
 
         if test_loss < best_test_loss:
             best_test_loss = test_loss
@@ -182,54 +187,55 @@ def options():
     return args
 
 
-def main():
-    args = options()
+@hydra.main(config_path='config', config_name='train_ipcrnet')
+def main(args: DictConfig):
 
     torch.backends.cudnn.deterministic = True
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    np.random.seed(args.seed)
+    torch.manual_seed(args.training.seed)
+    torch.cuda.manual_seed_all(args.training.seed)
+    np.random.seed(args.training.seed)
 
     boardio = SummaryWriter(log_dir='checkpoints/' + args.exp_name)
     _init_(args)
 
     textio = IOStream('checkpoints/' + args.exp_name + '/run.log')
-    textio.cprint(str(args))
+    textio.cprint(OmegaConf.to_yaml(args))
 
-    if args.dataset_type == 'modelnet':
-        trainset = RegistrationData('PCRNet', ModelNet40Data(train=True))
-        testset = RegistrationData('PCRNet', ModelNet40Data(train=False))
-    elif args.dataset_type == 'dude':
+    if args.data.dataset_type == 'modelnet':
+        trainset = RegistrationData('PCRNet', ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')))
+        testset = RegistrationData('PCRNet', ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')))
+    elif args.data.dataset_type == 'dude':
         trainset = RegistrationData('PCRNet', DudEData(train=True))
         testset = RegistrationData('PCRNet', DudEData(train=False))
-    train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=args.workers)
-    test_loader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=args.workers)
+    train_loader = DataLoader(trainset, batch_size=args.training.batch_size, shuffle=True, drop_last=True, num_workers=args.training.workers)
+    test_loader = DataLoader(testset, batch_size=args.training.batch_size, shuffle=False, drop_last=False, num_workers=args.training.workers)
 
     if not torch.cuda.is_available():
-        args.device = 'cpu'
-    args.device = torch.device(args.device)
+        device = 'cpu'
+    else:
+        device = torch.device(f'cuda:{args.training.cuda}')
 
     # Create PointNet Model.
-    ptnet = PointNet(emb_dims=args.emb_dims)
+    ptnet = PointNet(emb_dims=args.pointnet.emb_dims)
     model = iPCRNet(feature_model=ptnet)
-    model = model.to(args.device)
+    model = model.to(device)
 
     checkpoint = None
-    if args.resume:
-        assert os.path.isfile(args.resume)
-        checkpoint = torch.load(args.resume)
+    if args.training.resume:
+        assert os.path.isfile(args.training.resume)
+        checkpoint = torch.load(args.training.resume)
         args.start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['model'])
 
-    if args.pretrained:
-        assert os.path.isfile(args.pretrained)
-        model.load_state_dict(torch.load(args.pretrained, map_location='cpu'))
-    model.to(args.device)
+    if args.training.pretrained:
+        assert os.path.isfile(args.training.pretrained)
+        model.load_state_dict(torch.load(args.training.pretrained, map_location='cpu'))
+    model.to(device)
 
     if args.eval:
-        test(args, model, test_loader, textio)
+        test(args, model, test_loader, textio, device)
     else:
-        train(args, model, train_loader, test_loader, boardio, textio, checkpoint)
+        train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device)
 
 
 if __name__ == '__main__':
