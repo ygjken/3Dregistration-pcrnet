@@ -281,7 +281,8 @@ class ClassificationData(Dataset):
 
 
 class RegistrationData(Dataset):
-    def __init__(self, algorithm, data_class=ModelNet40Data(), partial_source=False, partial_template=False, noise=False, additional_params={}):
+    def __init__(self, algorithm, data_class=ModelNet40Data(), partial_source=False, partial_template=False, noise=False, additional_params={},
+                 angle_range=45, translation_range=1):
         super(RegistrationData, self).__init__()
         available_algorithms = ['PCRNet', 'PointNetLK', 'DCP', 'PRNet', 'iPCRNet', 'RPMNet', 'DeepGMR']
         if algorithm in available_algorithms:
@@ -298,7 +299,7 @@ class RegistrationData(Dataset):
 
         if self.algorithm == 'PCRNet' or self.algorithm == 'iPCRNet':
             from ops.transform_functions import PCRNetTransform
-            self.transforms = PCRNetTransform(len(data_class), angle_range=45, translation_range=1)
+            self.transforms = PCRNetTransform(len(data_class), angle_range=angle_range, translation_range=translation_range)
         if self.algorithm == 'PointNetLK':
             from ops.transform_functions import PNLKTransform
             self.transforms = PNLKTransform(0.8, True)

@@ -201,8 +201,14 @@ def main(args: DictConfig):
     textio.cprint(OmegaConf.to_yaml(args))
 
     if args.data.dataset_type == 'modelnet':
-        trainset = RegistrationData('PCRNet', ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')))
-        testset = RegistrationData('PCRNet', ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')))
+        trainset = RegistrationData('PCRNet',
+                                    ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')),
+                                    angle_range=args.data.registration_data.angle_range,
+                                    translation_range=args.data.registration_data.translation_range)
+        testset = RegistrationData('PCRNet',
+                                   ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')),
+                                   angle_range=args.data.registration_data.angle_range,
+                                   translation_range=args.data.registration_data.translation_range)
     elif args.data.dataset_type == 'dude':
         trainset = RegistrationData('PCRNet', DudEData(train=True))
         testset = RegistrationData('PCRNet', DudEData(train=False))
@@ -227,8 +233,9 @@ def main(args: DictConfig):
         model.load_state_dict(checkpoint['model'])
 
     if args.training.pretrained:
-        assert os.path.isfile(args.training.pretrained)
-        model.load_state_dict(torch.load(args.training.pretrained, map_location='cpu'))
+        pretrained = to_absolute_path(args.training.pretrained)
+        assert os.path.isfile(pretrained)
+        model.load_state_dict(torch.load(pretrained, map_location='cpu'))
     model.to(device)
 
     if args.eval:
