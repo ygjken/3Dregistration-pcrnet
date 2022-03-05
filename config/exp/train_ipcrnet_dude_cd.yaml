@@ -1,11 +1,11 @@
 # @package _global_
 
-exp_name: iPCRNet_cd
-dataset_path: data/modelnet40_ply_hdf5_2048
+exp_name: iPCRNet_dude_cd
+dataset_path: data/dude
 eval: false
 
 data: 
-  dataset_type: modelnet
+  dataset_type: dude
   num_points: 1024
   registration_data:
     angle_range: 45
@@ -27,6 +27,6 @@ training:
   start_epoch: 0
   optimizer: Adam
   resume: null
-  pretrained: null
+  pretrained: outputs/iPCRNet_modelnet_emdloss_epoch500/models/best_model.t7
   cuda: 0
   loss: cd
