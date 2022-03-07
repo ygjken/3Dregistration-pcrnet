@@ -201,7 +201,8 @@ class DudEData(Dataset):
         train=True,
         num_points=1024,
         sampler='random',
-        data_path='data/dude'
+        data_path=to_absolute_path('data/dude'),
+        do_transform=False
     ):
         super().__init__()
         self.path_prefix = data_path
@@ -230,8 +231,11 @@ class DudEData(Dataset):
             self.pcs = self.pcs[sep:]
 
         # numpy to tensor
-        for i, _ in enumerate(self.pcs):
-            self.pcs[i] = self._numpy_to_tensor(self.pcs[i])
+        self._numpy_to_tensor()
+
+        # transform
+        if do_transform:
+            self._transform()
 
     def _random_sample(self, pc: o3d.geometry.PointCloud, n: int):
         """run random sampling to a specified size
@@ -247,10 +251,19 @@ class DudEData(Dataset):
         pc = pc.random_down_sample((n + 0.1) / pc_len)
         return np.asarray(pc.points)
 
-    def _numpy_to_tensor(self, pc_pair: dict):
-        for key in pc_pair:
-            pc_pair[key] = torch.from_numpy(pc_pair[key].astype(np.float32)).clone()  # numpy to tensor
-        return pc_pair
+    def _numpy_to_tensor(self):
+        for i, _ in enumerate(self.pcs):
+            for key in self.pcs[i]:
+                self.pcs[i][key] = torch.from_numpy(self.pcs[i][key].astype(np.float32)).clone()  # numpy to tensor
+
+    def _transform(self, mean=0, var=0.1):
+        for i, _ in enumerate(self.pcs):
+            all_points = torch.cat((self.pcs[i]['source'], self.pcs[i]['target']), 0)
+            mu = torch.mean(all_points)
+            sigma2 = torch.mean((all_points - mu) ** 2)
+
+            for key in self.pcs[i]:
+                self.pcs[i][key] = (self.pcs[i][key] - mu) / torch.sqrt(sigma2 / var) + mean
 
     def __len__(self):
         return len(self.pcs)
@@ -281,7 +294,8 @@ class ClassificationData(Dataset):
 
 
 class RegistrationData(Dataset):
-    def __init__(self, algorithm, data_class=ModelNet40Data(), partial_source=False, partial_template=False, noise=False, additional_params={}):
+    def __init__(self, algorithm, data_class=ModelNet40Data(), partial_source=False, partial_template=False, noise=False, additional_params={},
+                 angle_range=45, translation_range=1):
         super(RegistrationData, self).__init__()
         available_algorithms = ['PCRNet', 'PointNetLK', 'DCP', 'PRNet', 'iPCRNet', 'RPMNet', 'DeepGMR']
         if algorithm in available_algorithms:
@@ -298,7 +312,7 @@ class RegistrationData(Dataset):
 
         if self.algorithm == 'PCRNet' or self.algorithm == 'iPCRNet':
             from ops.transform_functions import PCRNetTransform
-            self.transforms = PCRNetTransform(len(data_class), angle_range=45, translation_range=1)
+            self.transforms = PCRNetTransform(len(data_class), angle_range=angle_range, translation_range=translation_range)
         if self.algorithm == 'PointNetLK':
             from ops.transform_functions import PNLKTransform
             self.transforms = PNLKTransform(0.8, True)

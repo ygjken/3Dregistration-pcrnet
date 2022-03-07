@@ -1,0 +1,6 @@
+hydra:
+  run:
+    dir: outputs/iPCRNet_dude_cd/2022-02-21_22-06-55
+
+defaults:
+  - exp: train_ipcrnet_dude_cd

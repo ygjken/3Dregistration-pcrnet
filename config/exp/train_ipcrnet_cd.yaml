@@ -1,21 +1,24 @@
 # @package _global_
-hydra:
-  run:
-    dir: outputs/opt:${exp_name}/${now:%Y-%m-%d_%H-%M-%S}
 
-exp_name: iPCRNet_modelnet_
+exp_name: iPCRNet_cd
 dataset_path: data/modelnet40_ply_hdf5_2048
 eval: false
 
 data: 
   dataset_type: modelnet
   num_points: 1024
+  registration_data:
+    angle_range: 45
+    translation_range: 1
 
 pointnet:
   pointnet: tune
   emb_dims: 1024
   symfn: max
-  
+
+ipcrnet:
+  max_iteration: 8
+
 training:
   seed: 1234
   workers: 4
@@ -26,3 +29,4 @@ training:
   resume: null
   pretrained: null
   cuda: 0
+  loss: cd

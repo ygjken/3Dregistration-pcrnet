@@ -6,8 +6,11 @@ from torch.utils.data import DataLoader
 
 from models import PointNet
 from models import iPCRNet
-from losses import ChamferDistanceLoss, EarthMoverDistanceFunction, earth_mover_distance
-from data import RegistrationData, ModelNet40Data
+from data import RegistrationData, ModelNet40Data, DudEData
+
+import hydra
+from omegaconf import DictConfig
+from hydra.utils import to_absolute_path
 
 
 def options():
@@ -48,7 +51,7 @@ def options():
     return args
 
 
-def tensor2ply(template, source, transformed_source, dir_path):
+def tensor2ply(args, template, source, transformed_source, dir_path):
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
@@ -71,34 +74,41 @@ def tensor2ply(template, source, transformed_source, dir_path):
             transed_s_d.points = o3d.utility.Vector3dVector(transed_s)
             transed_s_d.paint_uniform_color([0, 0.706, 0])
 
-            file_path = os.path.join(dir_path, f'modelnet_{i}.ply')
+            file_path = os.path.join(dir_path, f'{args.data.dataset_type}_{i}.ply')
             o3d.io.write_point_cloud(file_path, s_d + t_d + transed_s_d)
 
 
-def main():
-    args = options()
+@hydra.main(config_path='config', config_name='default_run')
+def main(args: DictConfig):
 
     # load models
-    ptnet = PointNet(emb_dims=args.emb_dims)
-    ptnet.load_state_dict(
-        torch.load(args.pretrained_ptnet, map_location="cpu")
-    )
+    ptnet = PointNet(emb_dims=args.pointnet.emb_dims)
     model = iPCRNet(feature_model=ptnet)
+    pretrained = os.path.join(os.getcwd(), 'checkpoints/models/best_model.t7')
     model.load_state_dict(
-        torch.load(args.pretrained_model, map_location="cpu")
+        torch.load(pretrained, map_location="cpu")
     )
     # model = model.to(args.device)
     model.eval()
 
     # load dataset
-    testset = RegistrationData('PCRNet', ModelNet40Data(train=False))
-    test_loader = DataLoader(testset, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=args.workers)
+    if args.data.dataset_type == 'modelnet':
+        testset = RegistrationData('PCRNet', ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')))
+    elif args.data.dataset_type == 'dude':
+        testset = RegistrationData('PCRNet', DudEData(train=True))
+    test_loader = DataLoader(testset, batch_size=args.training.batch_size, shuffle=False, drop_last=False, num_workers=args.training.workers)
 
     # get model output
-    template, source, igt = next(iter(test_loader))
-    output = model(template, source)
+    itr = iter(test_loader)
+    output_dir_path = os.path.join(os.getcwd(), 'output_exsample')
+    if not os.path.exists(output_dir_path):
+        os.mkdir(output_dir_path)
 
-    tensor2ply(template, source, output['transformed_source'], f'logs/{args.exp_name}')
+    for i in range(1):
+        template, source, igt = next(itr)
+        output = model(template, source)
+
+        tensor2ply(args, template, source, output['transformed_source'], os.path.join(output_dir_path, f'batch{i}'))
 
 
 if __name__ == '__main__':

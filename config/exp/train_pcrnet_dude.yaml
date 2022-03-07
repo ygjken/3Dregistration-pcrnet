@@ -1,0 +1,32 @@
+# @package _global_
+
+exp_name: PCRNet_modelnet_dude
+dataset_path: data/dude
+eval: false
+
+data: 
+  dataset_type: dude
+  num_points: 1024
+  registration_data:
+    angle_range: 10
+    translation_range: 0.1
+
+pointnet:
+  pointnet: tune
+  emb_dims: 1024
+  symfn: max
+
+ipcrnet:
+  max_iteration: 1
+
+training:
+  seed: 1234
+  workers: 4
+  batch_size: 32
+  epochs: 500
+  start_epoch: 0
+  optimizer: Adam
+  resume: null
+  pretrained: outputs/PCRNet_modelnet/2022-02-20_00-44-11/checkpoints/PCRNet_modelnet/models/best_model.t7
+  cuda: 0
+

@@ -25,14 +25,8 @@ from data import RegistrationData, ModelNet40Data, DudEData
 
 
 def _init_(args):
-    if not os.path.exists('checkpoints'):
-        os.makedirs('checkpoints')
-    if not os.path.exists('checkpoints/' + args.exp_name):
-        os.makedirs('checkpoints/' + args.exp_name)
-    if not os.path.exists('checkpoints/' + args.exp_name + '/' + 'models'):
-        os.makedirs('checkpoints/' + args.exp_name + '/' + 'models')
-    os.system('cp main.py checkpoints' + '/' + args.exp_name + '/' + 'main.py.backup')
-    os.system('cp model.py checkpoints' + '/' + args.exp_name + '/' + 'model.py.backup')
+    if not os.path.exists('checkpoints/' + 'models'):
+        os.makedirs('checkpoints/' + 'models')
 
 
 class IOStream:
@@ -48,7 +42,7 @@ class IOStream:
         self.f.close()
 
 
-def test_one_epoch(device, model, test_loader):
+def test_one_epoch(device, model, test_loader, loss):
     model.eval()
     test_loss = 0.0
     pred = 0.0
@@ -61,7 +55,10 @@ def test_one_epoch(device, model, test_loader):
         igt = igt.to(device)
 
         output = model(template, source)
-        loss_val = earth_mover_distance(template, output['transformed_source'])
+        if loss == 'cd':
+            loss_val = ChamferDistanceLoss()(template, output['transformed_source'])
+        elif loss == 'emd':
+            loss_val = earth_mover_distance(template, output['transformed_source'])
 
         test_loss += loss_val.item()
         count += 1
@@ -70,13 +67,12 @@ def test_one_epoch(device, model, test_loader):
     return test_loss
 
 
-# ! BUG: cannot unpack non-iterable float object
 def test(args, model, test_loader, textio, device):
-    test_loss, test_accuracy = test_one_epoch(device, model, test_loader)
-    textio.cprint('Validation Loss: %f & Validation Accuracy: %f' % (test_loss, test_accuracy))
+    test_loss = test_one_epoch(device, model, test_loader, args.training.loss)
+    textio.cprint('Validation Loss: %f & Validation Accuracy: %s' % (test_loss, '-'))
 
 
-def train_one_epoch(device, model, train_loader, optimizer):
+def train_one_epoch(device, model, train_loader, optimizer, loss):
     model.train()
     train_loss = 0.0
     pred = 0.0
@@ -89,7 +85,11 @@ def train_one_epoch(device, model, train_loader, optimizer):
         igt = igt.to(device)
 
         output = model(template, source)
-        loss_val = earth_mover_distance(template, output['transformed_source'])
+
+        if loss == 'cd':
+            loss_val = ChamferDistanceLoss()(template, output['transformed_source'])
+        elif loss == 'emd':
+            loss_val = earth_mover_distance(template, output['transformed_source'])
         # print(loss_val.item())
 
         # forward + backward + optimize
@@ -118,8 +118,8 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
     best_test_loss = np.inf
 
     for epoch in range(args.training.start_epoch, args.training.epochs):
-        train_loss = train_one_epoch(device, model, train_loader, optimizer)
-        test_loss = test_one_epoch(device, model, test_loader)
+        train_loss = train_one_epoch(device, model, train_loader, optimizer, args.training.loss)
+        test_loss = test_one_epoch(device, model, test_loader, args.training.loss)
 
         if test_loss < best_test_loss:
             best_test_loss = test_loss
@@ -127,13 +127,13 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
                     'model': model.state_dict(),
                     'min_loss': best_test_loss,
                     'optimizer': optimizer.state_dict(), }
-            torch.save(snap, 'checkpoints/%s/models/best_model_snap.t7' % (args.exp_name))
-            torch.save(model.state_dict(), 'checkpoints/%s/models/best_model.t7' % (args.exp_name))
-            torch.save(model.feature_model.state_dict(), 'checkpoints/%s/models/best_ptnet_model.t7' % (args.exp_name))
+            torch.save(snap, 'checkpoints/models/best_model_snap.t7')
+            torch.save(model.state_dict(), 'checkpoints/models/best_model.t7')
+            torch.save(model.feature_model.state_dict(), 'checkpoints/models/best_ptnet_model.t7')
 
-        torch.save(snap, 'checkpoints/%s/models/model_snap.t7' % (args.exp_name))
-        torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % (args.exp_name))
-        torch.save(model.feature_model.state_dict(), 'checkpoints/%s/models/ptnet_model.t7' % (args.exp_name))
+        torch.save(snap, 'checkpoints/models/model_snap.t7')
+        torch.save(model.state_dict(), 'checkpoints/models/model.t7')
+        torch.save(model.feature_model.state_dict(), 'checkpoints/models/ptnet_model.t7')
 
         boardio.add_scalar('Train Loss', train_loss, epoch + 1)
         boardio.add_scalar('Test Loss', test_loss, epoch + 1)
@@ -187,7 +187,7 @@ def options():
     return args
 
 
-@hydra.main(config_path='config', config_name='train_ipcrnet')
+@hydra.main(config_path='config', config_name='default')
 def main(args: DictConfig):
 
     torch.backends.cudnn.deterministic = True
@@ -195,15 +195,21 @@ def main(args: DictConfig):
     torch.cuda.manual_seed_all(args.training.seed)
     np.random.seed(args.training.seed)
 
-    boardio = SummaryWriter(log_dir='checkpoints/' + args.exp_name)
+    boardio = SummaryWriter(log_dir='checkpoints/')
     _init_(args)
 
-    textio = IOStream('checkpoints/' + args.exp_name + '/run.log')
+    textio = IOStream('checkpoints/run.log')
     textio.cprint(OmegaConf.to_yaml(args))
 
     if args.data.dataset_type == 'modelnet':
-        trainset = RegistrationData('PCRNet', ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')))
-        testset = RegistrationData('PCRNet', ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')))
+        trainset = RegistrationData('PCRNet',
+                                    ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')),
+                                    angle_range=args.data.registration_data.angle_range,
+                                    translation_range=args.data.registration_data.translation_range)
+        testset = RegistrationData('PCRNet',
+                                   ModelNet40Data(train=False, download=False, dir_path=to_absolute_path('data')),
+                                   angle_range=args.data.registration_data.angle_range,
+                                   translation_range=args.data.registration_data.translation_range)
     elif args.data.dataset_type == 'dude':
         trainset = RegistrationData('PCRNet', DudEData(train=True))
         testset = RegistrationData('PCRNet', DudEData(train=False))
@@ -228,8 +234,9 @@ def main(args: DictConfig):
         model.load_state_dict(checkpoint['model'])
 
     if args.training.pretrained:
-        assert os.path.isfile(args.training.pretrained)
-        model.load_state_dict(torch.load(args.training.pretrained, map_location='cpu'))
+        pretrained = to_absolute_path(args.training.pretrained)
+        assert os.path.isfile(pretrained)
+        model.load_state_dict(torch.load(pretrained, map_location='cpu'))
     model.to(device)
 
     if args.eval:
