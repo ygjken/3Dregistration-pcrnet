@@ -202,6 +202,7 @@ class DudEData(Dataset):
         num_points=1024,
         sampler='random',
         data_path=to_absolute_path('data/dude'),
+        do_transform=False
     ):
         super().__init__()
         self.path_prefix = data_path
@@ -230,8 +231,11 @@ class DudEData(Dataset):
             self.pcs = self.pcs[sep:]
 
         # numpy to tensor
-        for i, _ in enumerate(self.pcs):
-            self.pcs[i] = self._numpy_to_tensor(self.pcs[i])
+        self._numpy_to_tensor()
+
+        # transform
+        if do_transform:
+            self._transform()
 
     def _random_sample(self, pc: o3d.geometry.PointCloud, n: int):
         """run random sampling to a specified size
@@ -247,10 +251,19 @@ class DudEData(Dataset):
         pc = pc.random_down_sample((n + 0.1) / pc_len)
         return np.asarray(pc.points)
 
-    def _numpy_to_tensor(self, pc_pair: dict):
-        for key in pc_pair:
-            pc_pair[key] = torch.from_numpy(pc_pair[key].astype(np.float32)).clone()  # numpy to tensor
-        return pc_pair
+    def _numpy_to_tensor(self):
+        for i, _ in enumerate(self.pcs):
+            for key in self.pcs[i]:
+                self.pcs[i][key] = torch.from_numpy(self.pcs[i][key].astype(np.float32)).clone()  # numpy to tensor
+
+    def _transform(self, mean=0, var=0.1):
+        for i, _ in enumerate(self.pcs):
+            all_points = torch.cat((self.pcs[i]['source'], self.pcs[i]['target']), 0)
+            mu = torch.mean(all_points)
+            sigma2 = torch.mean((all_points - mu) ** 2)
+
+            for key in self.pcs[i]:
+                self.pcs[i][key] = (self.pcs[i][key] - mu) / torch.sqrt(sigma2 / var) + mean
 
     def __len__(self):
         return len(self.pcs)
