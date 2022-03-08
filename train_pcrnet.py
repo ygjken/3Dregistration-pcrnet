@@ -148,51 +148,6 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
         textio.cprint('EPOCH:: %d, Traininig Loss: %f, Testing Loss: %f, Best Loss: %f' % (epoch + 1, train_loss, test_loss, best_test_loss))
 
 
-def options():
-    parser = argparse.ArgumentParser(description='Point Cloud Registration')
-    parser.add_argument('--exp_name', type=str, default='exp_ipcrnet', metavar='N',
-                        help='Name of the experiment')
-    parser.add_argument('--dataset_path', type=str, default='ModelNet40',
-                        metavar='PATH', help='path to the input dataset')  # like '/path/to/ModelNet40'
-    parser.add_argument('--eval', type=bool, default=False, help='Train or Evaluate the network.')
-
-    # settings for input data
-    parser.add_argument('--dataset_type', default='modelnet', choices=['modelnet', 'shapenet2', 'dude'],
-                        metavar='DATASET', help='dataset type (default: modelnet)')
-    parser.add_argument('--num_points', default=1024, type=int,
-                        metavar='N', help='points in point-cloud (default: 1024)')
-
-    # settings for PointNet
-    parser.add_argument('--pointnet', default='tune', type=str, choices=['fixed', 'tune'],
-                        help='train pointnet (default: tune)')
-    parser.add_argument('--emb_dims', default=1024, type=int,
-                        metavar='K', help='dim. of the feature vector (default: 1024)')
-    parser.add_argument('--symfn', default='max', choices=['max', 'avg'],
-                        help='symmetric function (default: max)')
-
-    # settings for on training
-    parser.add_argument('--seed', type=int, default=1234)
-    parser.add_argument('-j', '--workers', default=4, type=int,
-                        metavar='N', help='number of data loading workers (default: 4)')
-    parser.add_argument('-b', '--batch_size', default=32, type=int,
-                        metavar='N', help='mini-batch size (default: 32)')
-    parser.add_argument('--epochs', default=200, type=int,
-                        metavar='N', help='number of total epochs to run')
-    parser.add_argument('--start_epoch', default=0, type=int,
-                        metavar='N', help='manual epoch number (useful on restarts)')
-    parser.add_argument('--optimizer', default='Adam', choices=['Adam', 'SGD'],
-                        metavar='METHOD', help='name of an optimizer (default: Adam)')
-    parser.add_argument('--resume', default='', type=str,
-                                            metavar='PATH', help='path to latest checkpoint (default: null (no-use))')
-    parser.add_argument('--pretrained', default='', type=str,
-                        metavar='PATH', help='path to pretrained model file (default: null (no-use))')
-    parser.add_argument('--device', default='cuda:0', type=str,
-                                            metavar='DEVICE', help='use CUDA if available')
-
-    args = parser.parse_args()
-    return args
-
-
 @hydra.main(config_path='config', config_name='default')
 def main(args: DictConfig):
 
