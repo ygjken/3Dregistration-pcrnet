@@ -347,6 +347,10 @@ class RegistrationData(Dataset):
             source, template = self.data_class[index]
             self.transforms.index = index
             source = self.transforms(source)
+        elif type(self.data_class).__name__ == 'DudESourceData':
+            template = self.data_class[index]
+            self.transforms.index = index
+            source = self.transforms(template)
 
         # Check for Partial Data.
         if self.partial_source:

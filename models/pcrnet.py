@@ -44,7 +44,7 @@ class iPCRNet(nn.Module):
         est_R = torch.bmm(est_R_temp, est_R)
 
         source = transform.quaternion_transform(source, pose_7d)      # Ps' = est_R*Ps + est_t
-        return est_R, est_t, source
+        return est_R, est_t, pose_7d, source
 
     def forward(self, template, source, max_iteration=8):
         est_R = torch.eye(3).to(template).view(1, 3, 3).expand(template.size(0), 3, 3).contiguous()         # (Bx3x3)
@@ -52,14 +52,15 @@ class iPCRNet(nn.Module):
         template_features = self.pooling(self.feature_model(template))
 
         if max_iteration == 1:
-            est_R, est_t, source = self.spam(template_features, source, est_R, est_t)
+            est_R, est_t, pose_7d, source = self.spam(template_features, source, est_R, est_t)
         else:
             for i in range(max_iteration):
-                est_R, est_t, source = self.spam(template_features, source, est_R, est_t)
+                est_R, est_t, pose_7d, source = self.spam(template_features, source, est_R, est_t)
 
         result = {'est_R': est_R,				# source -> template
                   'est_t': est_t,				# source -> template
                   'est_T': transform.convert2transformation(est_R, est_t),			# source -> template
+                  'pose_7d': pose_7d,
                   'r': template_features - self.source_features,
                   'transformed_source': source}
         return result

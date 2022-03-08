@@ -21,7 +21,8 @@ if BASE_DIR[-8:] == 'examples':
 from models import PointNet
 from models import iPCRNet
 from losses import ChamferDistanceLoss, EarthMoverDistanceFunction, earth_mover_distance
-from data import RegistrationData, ModelNet40Data, DudEData
+from data import RegistrationData, ModelNet40Data, DudEData, DudESourceData
+from metrics import QuatMetric
 
 
 def _init_(args):
@@ -46,13 +47,14 @@ def test_one_epoch(device, model, test_loader, loss):
     model.eval()
     test_loss = 0.0
     pred = 0.0
+    quat_error = 0.0
     count = 0
     for i, data in enumerate(tqdm(test_loader)):
         template, source, igt = data
 
         template = template.to(device)
         source = source.to(device)
-        igt = igt.to(device)
+        igt = igt.view(-1, 7).to(device)
 
         output = model(template, source)
         if loss == 'cd':
@@ -60,16 +62,19 @@ def test_one_epoch(device, model, test_loader, loss):
         elif loss == 'emd':
             loss_val = earth_mover_distance(template, output['transformed_source'])
 
+        quat_rot, quat_trans = QuatMetric().compute_errors(igt, output['pose_7d'])
+        quat_error += (quat_rot + quat_trans).item()
         test_loss += loss_val.item()
         count += 1
 
     test_loss = float(test_loss) / count
-    return test_loss
+    quat_error = float(quat_error) / count
+    return test_loss, quat_error
 
 
 def test(args, model, test_loader, textio, device):
-    test_loss = test_one_epoch(device, model, test_loader, args.training.loss)
-    textio.cprint('Validation Loss: %f & Validation Accuracy: %s' % (test_loss, '-'))
+    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss)
+    textio.cprint('Validation Loss: %f & Validation Accuracy: %s & Quat Error: %f' % (test_loss, '-', quat_error))
 
 
 def train_one_epoch(device, model, train_loader, optimizer, loss):
@@ -119,7 +124,7 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
 
     for epoch in range(args.training.start_epoch, args.training.epochs):
         train_loss = train_one_epoch(device, model, train_loader, optimizer, args.training.loss)
-        test_loss = test_one_epoch(device, model, test_loader, args.training.loss)
+        test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss)
 
         if test_loss < best_test_loss:
             best_test_loss = test_loss
@@ -138,6 +143,7 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
         boardio.add_scalar('Train Loss', train_loss, epoch + 1)
         boardio.add_scalar('Test Loss', test_loss, epoch + 1)
         boardio.add_scalar('Best Test Loss', best_test_loss, epoch + 1)
+        boardio.add_scalar('quat_error', quat_error, epoch + 1)
 
         textio.cprint('EPOCH:: %d, Traininig Loss: %f, Testing Loss: %f, Best Loss: %f' % (epoch + 1, train_loss, test_loss, best_test_loss))
 
@@ -213,6 +219,10 @@ def main(args: DictConfig):
     elif args.data.dataset_type == 'dude':
         trainset = RegistrationData('PCRNet', DudEData(train=True))
         testset = RegistrationData('PCRNet', DudEData(train=False))
+    elif args.data.dataset_type == 'dude_source':
+        trainset = RegistrationData('PCRNet', DudESourceData(train=True, do_transform=True))
+        testset = RegistrationData('PCRNet', DudESourceData(train=False, do_transform=True))
+
     train_loader = DataLoader(trainset, batch_size=args.training.batch_size, shuffle=True, drop_last=True, num_workers=args.training.workers)
     test_loader = DataLoader(testset, batch_size=args.training.batch_size, shuffle=False, drop_last=False, num_workers=args.training.workers)
 
