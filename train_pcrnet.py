@@ -24,6 +24,8 @@ from losses import ChamferDistanceLoss, EarthMoverDistanceFunction, earth_mover_
 from data import RegistrationData, ModelNet40Data, DudEData, DudESourceData
 from metrics import QuatMetric
 
+import open3d as o3d
+
 
 def _init_(args):
     if not os.path.exists('checkpoints/' + 'models'):
@@ -43,7 +45,41 @@ class IOStream:
         self.f.close()
 
 
-def test_one_epoch(device, model, test_loader, loss):
+class PCIOStream:
+    def __init__(self, path):
+        self.dir = path
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+    def write(self, source, target, transformed_source, epoch):
+        for i, (s, t, transed_s) in enumerate(zip(source, target, transformed_source)):
+            s = self._to_o3d(s, 'blue')
+            t = self._to_o3d(t, 'yellow')
+            transed_s = self._to_o3d(transed_s, 'green')
+
+            dir_path = os.path.join(self.dir, f'epoch{epoch}')
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+
+            file_path = os.path.join(dir_path, f'out{i}.ply')
+            o3d.io.write_point_cloud(file_path, s + t + transed_s)
+
+    def _to_o3d(self, tensor, color):
+        array = tensor.to('cpu').detach().numpy().copy()
+        pc = o3d.geometry.PointCloud()
+        pc.points = o3d.utility.Vector3dVector(array)
+
+        if color == 'yellow':
+            pc.paint_uniform_color([1, 0.706, 0])  # yellow
+        elif color == 'blue':
+            pc.paint_uniform_color([0, 0.651, 0.929])  # blue
+        elif color == 'green':
+            pc.paint_uniform_color([0, 0.706, 0])  # green
+
+        return pc
+
+
+def test_one_epoch(device, model, test_loader, loss, pcio, epoch):
     model.eval()
     test_loss = 0.0
     pred = 0.0
@@ -69,11 +105,15 @@ def test_one_epoch(device, model, test_loader, loss):
 
     test_loss = float(test_loss) / count
     quat_error = float(quat_error) / count
+
+    if epoch % 50 == 0:
+        pcio.write(source, template, output['transformed_source'], epoch)
+
     return test_loss, quat_error
 
 
-def test(args, model, test_loader, textio, device):
-    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss)
+def test(args, model, test_loader, textio, pcio, device):
+    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, 0)
     textio.cprint('Validation Loss: %f & Validation Accuracy: %s & Quat Error: %f' % (test_loss, '-', quat_error))
 
 
@@ -109,7 +149,7 @@ def train_one_epoch(device, model, train_loader, optimizer, loss):
     return train_loss
 
 
-def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device):
+def train(args, model, train_loader, test_loader, boardio, textio, pcio, checkpoint, device):
     learnable_params = filter(lambda p: p.requires_grad, model.parameters())
     if args.training.optimizer == 'Adam':
         optimizer = torch.optim.Adam(learnable_params)
@@ -124,7 +164,7 @@ def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, d
 
     for epoch in range(args.training.start_epoch, args.training.epochs):
         train_loss = train_one_epoch(device, model, train_loader, optimizer, args.training.loss)
-        test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss)
+        test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, epoch)
 
         if test_loss < best_test_loss:
             best_test_loss = test_loss
@@ -162,6 +202,8 @@ def main(args: DictConfig):
     textio = IOStream('checkpoints/run.log')
     textio.cprint(OmegaConf.to_yaml(args))
 
+    pcio = PCIOStream('pointcloud_log')
+
     if args.data.dataset_type == 'modelnet':
         trainset = RegistrationData('PCRNet',
                                     ModelNet40Data(train=True, download=False, dir_path=to_absolute_path('data')),
@@ -175,8 +217,8 @@ def main(args: DictConfig):
         trainset = RegistrationData('PCRNet', DudEData(train=True))
         testset = RegistrationData('PCRNet', DudEData(train=False))
     elif args.data.dataset_type == 'dude_source':
-        trainset = RegistrationData('PCRNet', DudESourceData(train=True, do_transform=True))
-        testset = RegistrationData('PCRNet', DudESourceData(train=False, do_transform=True))
+        trainset = RegistrationData('PCRNet', DudESourceData(train=True, do_transform=args.data.scaled))
+        testset = RegistrationData('PCRNet', DudESourceData(train=False, do_transform=args.data.scaled))
 
     train_loader = DataLoader(trainset, batch_size=args.training.batch_size, shuffle=True, drop_last=True, num_workers=args.training.workers)
     test_loader = DataLoader(testset, batch_size=args.training.batch_size, shuffle=False, drop_last=False, num_workers=args.training.workers)
@@ -205,9 +247,9 @@ def main(args: DictConfig):
     model.to(device)
 
     if args.eval:
-        test(args, model, test_loader, textio, device)
+        test(args, model, test_loader, textio, pcio, device)
     else:
-        train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device)
+        train(args, model, train_loader, test_loader, boardio, textio, pcio, checkpoint, device)
 
 
 if __name__ == '__main__':
