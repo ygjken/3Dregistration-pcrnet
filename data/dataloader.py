@@ -340,17 +340,17 @@ class RegistrationData(Dataset):
 
     def __getitem__(self, index):
         if type(self.data_class).__name__ == 'ModelNet40Data':
-            template, label = self.data_class[index]
+            source, label = self.data_class[index]
             self.transforms.index = index				# for fixed transformations in PCRNet.
-            source = self.transforms(template)
+            template = self.transforms(source)
         elif type(self.data_class).__name__ == 'DudEData':
             source, template = self.data_class[index]
             self.transforms.index = index
             source = self.transforms(source)
         elif type(self.data_class).__name__ == 'DudESourceData':
-            template = self.data_class[index]
+            source = self.data_class[index]
             self.transforms.index = index
-            source = self.transforms(template)
+            template = self.transforms(source)
 
         # Check for Partial Data.
         if self.partial_source:
