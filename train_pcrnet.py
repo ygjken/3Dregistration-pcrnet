@@ -55,13 +55,13 @@ class PCIOStream:
         if not os.path.exists(path):
             os.makedirs(path)
 
-    def write(self, source, target, transformed_source, epoch, file_name='out'):
+    def write_pcs(self, source, target, transformed_source, dir_name, file_name='out'):
         for i, (s, t, transed_s) in enumerate(zip(source, target, transformed_source)):
             s = self._to_o3d(s, 'blue')
             t = self._to_o3d(t, 'yellow')
             transed_s = self._to_o3d(transed_s, 'green')
 
-            dir_path = os.path.join(self.dir, f'epoch{epoch}')
+            dir_path = os.path.join(self.dir, dir_name)
             if not os.path.exists(dir_path):
                 os.makedirs(dir_path)
 
@@ -74,8 +74,8 @@ class PCIOStream:
         else:
             self.scalar_table[name].append(val)
 
-    def write_scalar(self, epoch):
-        text_file = os.path.join(self.dir, f'epoch{epoch}', 'scalar_log.txt')
+    def write_scalar(self, dir_name):
+        text_file = os.path.join(self.dir, dir_name, 'scalar_log.txt')
         max_len = 0
         for key in self.scalar_table:
             max_len = max(max_len, len(self.scalar_table[key]))
@@ -94,6 +94,19 @@ class PCIOStream:
                 f.write('\n')
 
         self._reset_scalar_field()
+
+    def logging_scalar(self, source, target, gt_7d, est_7d, output, loss):
+        for i, (igt_, t, transed_s, pose_7d) in enumerate(zip(gt_7d, target, output['transformed_source'], est_7d)):
+            if loss == 'cd':
+                loss_val = ChamferDistanceLoss()(t.unsqueeze(0), transed_s.unsqueeze(0))
+            elif loss == 'emd':
+                loss_val = earth_mover_distance(t.unsqueeze(0), transed_s.unsqueeze(0))
+
+            quat_rot, quat_trans = QuatMetric()(igt_.unsqueeze(0), pose_7d.unsqueeze(0))
+
+            self.add_scalar('loss', loss_val.item())
+            self.add_scalar('quat_rot', quat_rot.item())
+            self.add_scalar('quat_trans', quat_trans.item())
 
     def _reset_scalar_field(self):
         self.scalar_table = {}
@@ -127,7 +140,7 @@ def pc_scalar_logging(pcio, source, target, gt_7d, est_7d, output, loss):
         pcio.add_scalar('quat_trans', quat_trans.item())
 
 
-def test_one_epoch(device, model, test_loader, loss, pcio, epoch):
+def test_one_epoch(device, model, test_loader, loss, pcio=None, dir_name=None):
     model.eval()
     test_loss = 0.0
     pred = 0.0
@@ -150,9 +163,6 @@ def test_one_epoch(device, model, test_loader, loss, pcio, epoch):
         est_quat = quaternion.matrix_to_quaternion(output['est_R'])
         est_7d = torch.cat((est_quat, output['est_t'].view(-1, 3)), dim=1)
 
-        # print('gt_7d:', gt_7d)
-        # print('est_7d:', est_7d)
-
         quat_rot, quat_trans = QuatMetric()(gt_7d, est_7d)
         quat_error += (quat_rot + quat_trans).item()
         test_loss += loss_val.item()
@@ -161,20 +171,30 @@ def test_one_epoch(device, model, test_loader, loss, pcio, epoch):
     test_loss = float(test_loss) / count
     quat_error = float(quat_error) / count
 
-    if (epoch + 1) % 100 == 0:
-        pcio.write(source, template, output['transformed_source'], epoch)
-        pc_scalar_logging(pcio, source, template, gt_7d, est_7d, output, loss)
-        pcio.write_scalar(epoch)
+    if pcio is not None:
+        pcio.write_pcs(source, template, output['transformed_source'], dir_name)
+        pcio.logging_scalar(source, template, gt_7d, est_7d, output, loss)
+        pcio.write_scalar(dir_name)
 
     return test_loss, quat_error
 
 
 def test(args, model, test_loader, textio, pcio, device):
-    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, 0)
+    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, 'test')
     textio.cprint('Validation Loss: %f & Validation Accuracy: %s & Quat Error: %f' % (test_loss, '-', quat_error))
 
 
-def train_one_epoch(device, model, train_loader, optimizer, loss, pcio, epoch):
+def test_by_best_model(args, model, test_loader, textio, pcio, device):
+    pretrained = 'checkpoints/models/best_model.t7'
+    assert os.path.isfile(pretrained)
+    model.load_state_dict(torch.load(pretrained, map_location='cpu'))
+    model.to(device)
+
+    test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, 'best_model')
+    textio.cprint('Validation Loss: %f & Validation Accuracy: %s & Quat Error: %f' % (test_loss, '-', quat_error))
+
+
+def train_one_epoch(device, model, train_loader, optimizer, loss):
     model.train()
     train_loss = 0.0
     pred = 0.0
@@ -204,15 +224,10 @@ def train_one_epoch(device, model, train_loader, optimizer, loss, pcio, epoch):
 
     train_loss = float(train_loss) / count
 
-    # logging
-    # model.eval()
-    # if (epoch + 1) % 100 == 0:
-    #     pcio.write(source, template, output['transformed_source'], epoch, 'train')
-
     return train_loss
 
 
-def train(args, model, train_loader, test_loader, boardio, textio, pcio, checkpoint, device):
+def train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device):
     learnable_params = filter(lambda p: p.requires_grad, model.parameters())
     if args.training.optimizer == 'Adam':
         optimizer = torch.optim.Adam(learnable_params)
@@ -226,8 +241,8 @@ def train(args, model, train_loader, test_loader, boardio, textio, pcio, checkpo
     best_test_loss = np.inf
 
     for epoch in range(args.training.start_epoch, args.training.epochs):
-        train_loss = train_one_epoch(device, model, train_loader, optimizer, args.training.loss, pcio, epoch)
-        test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss, pcio, epoch)
+        train_loss = train_one_epoch(device, model, train_loader, optimizer, args.training.loss)
+        test_loss, quat_error = test_one_epoch(device, model, test_loader, args.training.loss)
 
         if test_loss < best_test_loss:
             best_test_loss = test_loss
@@ -289,7 +304,7 @@ def main(args: DictConfig):
     if not torch.cuda.is_available():
         device = 'cpu'
     else:
-        device = torch.device(f'cuda:{args.training.cuda}')
+        device = torch.device('cuda')
 
     # Create PointNet Model.
     ptnet = PointNet(emb_dims=args.pointnet.emb_dims)
@@ -312,7 +327,8 @@ def main(args: DictConfig):
     if args.eval:
         test(args, model, test_loader, textio, pcio, device)
     else:
-        train(args, model, train_loader, test_loader, boardio, textio, pcio, checkpoint, device)
+        train(args, model, train_loader, test_loader, boardio, textio, checkpoint, device)
+        test_by_best_model(args, model, test_loader, textio, pcio, device)
 
 
 if __name__ == '__main__':
